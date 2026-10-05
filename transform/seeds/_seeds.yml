@@ -1,0 +1,47 @@
+version: 2
+
+seeds:
+  - name: network_zones
+    description: Address ranges of the monitored network. The most specific range wins.
+    config:
+      column_types: {zone: varchar, cidr: varchar, is_internal: boolean, description: varchar}
+    columns:
+      - name: cidr
+        data_tests: [unique, not_null]
+
+  - name: service_ports
+    description: Well-known service names by IP protocol number and port.
+    config:
+      column_types: {protocol: smallint, port: integer, service: varchar}
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "protocol || '/' || port"
+
+  - name: mitre_techniques
+    description: The MITRE ATT&CK techniques that the detections map to.
+    columns:
+      - name: technique_id
+        data_tests: [unique, not_null]
+
+  - name: detection_rules
+    description: Metadata of each detection rule.
+    columns:
+      - name: rule_id
+        data_tests: [unique, not_null]
+      - name: severity
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [low, medium, high, critical]
+      - name: mitre_technique_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('mitre_techniques')
+                field: technique_id
+
+  - name: detection_allowlist
+    description: Known-benign patterns that a rule must not alert on. '*' matches anything.
+    config:
+      column_types: {rule_id: varchar, src_ip: varchar, dst_ip: varchar, dst_port: varchar, reason: varchar}

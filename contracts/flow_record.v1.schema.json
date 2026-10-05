@@ -1,0 +1,479 @@
+{
+  "$defs": {
+    "ApplicationSummary": {
+      "properties": {
+        "dns_queries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dns Queries",
+          "type": "array"
+        },
+        "http_hosts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Http Hosts",
+          "type": "array"
+        },
+        "http_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Http Paths",
+          "type": "array"
+        },
+        "protocols": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Protocols",
+          "type": "array"
+        },
+        "responder_dns_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Responder Dns Names",
+          "type": "array"
+        },
+        "tls_alpn": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tls Alpn",
+          "type": "array"
+        },
+        "tls_server_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tls Server Names",
+          "type": "array"
+        }
+      },
+      "title": "ApplicationSummary",
+      "type": "object"
+    },
+    "DirectionCounters": {
+      "properties": {
+        "bytes": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "packets": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Packets",
+          "type": "integer"
+        },
+        "payload_bytes": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Payload Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "packets",
+        "bytes",
+        "payload_bytes"
+      ],
+      "title": "DirectionCounters",
+      "type": "object"
+    },
+    "Endpoint": {
+      "properties": {
+        "ip": {
+          "title": "Ip",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 0,
+          "title": "Port",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ip",
+        "port"
+      ],
+      "title": "Endpoint",
+      "type": "object"
+    },
+    "FlowWarning": {
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "count": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "count"
+      ],
+      "title": "FlowWarning",
+      "type": "object"
+    },
+    "InterArrivalSummary": {
+      "properties": {
+        "max_seconds": {
+          "minimum": 0,
+          "title": "Max Seconds",
+          "type": "number"
+        },
+        "mean_seconds": {
+          "minimum": 0,
+          "title": "Mean Seconds",
+          "type": "number"
+        },
+        "min_seconds": {
+          "minimum": 0,
+          "title": "Min Seconds",
+          "type": "number"
+        },
+        "stddev_seconds": {
+          "minimum": 0,
+          "title": "Stddev Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min_seconds",
+        "max_seconds",
+        "mean_seconds",
+        "stddev_seconds"
+      ],
+      "title": "InterArrivalSummary",
+      "type": "object"
+    },
+    "SizeSummary": {
+      "properties": {
+        "max": {
+          "minimum": 0,
+          "title": "Max",
+          "type": "number"
+        },
+        "mean": {
+          "minimum": 0,
+          "title": "Mean",
+          "type": "number"
+        },
+        "median": {
+          "minimum": 0,
+          "title": "Median",
+          "type": "number"
+        },
+        "median_exact": {
+          "title": "Median Exact",
+          "type": "boolean"
+        },
+        "min": {
+          "minimum": 0,
+          "title": "Min",
+          "type": "number"
+        },
+        "stddev": {
+          "minimum": 0,
+          "title": "Stddev",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min",
+        "max",
+        "mean",
+        "stddev",
+        "median",
+        "median_exact"
+      ],
+      "title": "SizeSummary",
+      "type": "object"
+    },
+    "TcpSummary": {
+      "properties": {
+        "duplicate_segments": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Duplicate Segments",
+          "type": "integer"
+        },
+        "fin_packets": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Fin Packets",
+          "type": "integer"
+        },
+        "flags_initiator": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Flags Initiator",
+          "type": "array"
+        },
+        "flags_responder": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Flags Responder",
+          "type": "array"
+        },
+        "rst_packets": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Rst Packets",
+          "type": "integer"
+        },
+        "state": {
+          "minLength": 1,
+          "title": "State",
+          "type": "string"
+        },
+        "syn_packets": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Syn Packets",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "state",
+        "flags_initiator",
+        "flags_responder",
+        "syn_packets",
+        "fin_packets",
+        "rst_packets",
+        "duplicate_segments"
+      ],
+      "title": "TcpSummary",
+      "type": "object"
+    },
+    "Timestamp": {
+      "properties": {
+        "nanos": {
+          "maximum": 999999999,
+          "minimum": 0,
+          "title": "Nanos",
+          "type": "integer"
+        },
+        "rfc3339": {
+          "minLength": 1,
+          "title": "Rfc3339",
+          "type": "string"
+        },
+        "unix_seconds": {
+          "maximum": 253402300799,
+          "minimum": 0,
+          "title": "Unix Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "unix_seconds",
+        "nanos",
+        "rfc3339"
+      ],
+      "title": "Timestamp",
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/exosphere8/flowsentinel-lakehouse/contracts/flow_record.v1.schema.json",
+  "description": "A FlowSentinel flow record as accepted by the lakehouse (contract version 1).",
+  "properties": {
+    "alert_ids": {
+      "items": {
+        "maximum": 9223372036854775807,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "title": "Alert Ids",
+      "type": "array"
+    },
+    "application": {
+      "$ref": "#/$defs/ApplicationSummary"
+    },
+    "bytes_total": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "title": "Bytes Total",
+      "type": "integer"
+    },
+    "dominant_endpoint": {
+      "minLength": 1,
+      "title": "Dominant Endpoint",
+      "type": "string"
+    },
+    "duration_seconds": {
+      "minimum": 0,
+      "title": "Duration Seconds",
+      "type": "number"
+    },
+    "end_reason": {
+      "minLength": 1,
+      "title": "End Reason",
+      "type": "string"
+    },
+    "first_packet_index": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "title": "First Packet Index",
+      "type": "integer"
+    },
+    "first_seen": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "flow_id": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "title": "Flow Id",
+      "type": "integer"
+    },
+    "initiator": {
+      "$ref": "#/$defs/Endpoint"
+    },
+    "initiator_basis": {
+      "minLength": 1,
+      "title": "Initiator Basis",
+      "type": "string"
+    },
+    "initiator_to_responder": {
+      "$ref": "#/$defs/DirectionCounters"
+    },
+    "inter_arrival": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InterArrivalSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ip_version": {
+      "enum": [
+        4,
+        6
+      ],
+      "title": "Ip Version",
+      "type": "integer"
+    },
+    "last_packet_index": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "title": "Last Packet Index",
+      "type": "integer"
+    },
+    "last_seen": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "packet_size": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SizeSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "packets_total": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "title": "Packets Total",
+      "type": "integer"
+    },
+    "protocol": {
+      "maximum": 255,
+      "minimum": 0,
+      "title": "Protocol",
+      "type": "integer"
+    },
+    "protocol_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Protocol Name"
+    },
+    "responder": {
+      "$ref": "#/$defs/Endpoint"
+    },
+    "responder_to_initiator": {
+      "$ref": "#/$defs/DirectionCounters"
+    },
+    "tcp": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TcpSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/FlowWarning"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "flow_id",
+    "ip_version",
+    "protocol",
+    "protocol_name",
+    "initiator",
+    "responder",
+    "initiator_basis",
+    "first_seen",
+    "last_seen",
+    "duration_seconds",
+    "first_packet_index",
+    "last_packet_index",
+    "initiator_to_responder",
+    "responder_to_initiator",
+    "packets_total",
+    "bytes_total",
+    "packet_size",
+    "inter_arrival",
+    "tcp",
+    "application",
+    "dominant_endpoint",
+    "end_reason"
+  ],
+  "title": "FlowRecord",
+  "type": "object"
+}

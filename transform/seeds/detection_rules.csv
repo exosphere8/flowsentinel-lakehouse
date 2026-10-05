@@ -1,0 +1,5 @@
+rule_id,rule_name,severity,mitre_technique_id,description
+port_scan,Port scan,medium,T1046,One host probed many ports on another host within an hour and most attempts failed.
+beaconing,Periodic beaconing,high,T1071.001,An internal host connected to the same external endpoint at very regular intervals.
+dns_tunneling,DNS tunneling,high,T1071.004,One host queried many long unique names under one domain within an hour.
+exfiltration,Large outbound transfer,critical,T1048,An internal host uploaded an unusually large volume to one external host in a day.

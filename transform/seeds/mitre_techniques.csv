@@ -1,0 +1,5 @@
+technique_id,technique_name,tactic
+T1046,Network Service Discovery,Discovery
+T1071.001,Application Layer Protocol: Web Protocols,Command and Control
+T1071.004,Application Layer Protocol: DNS,Command and Control
+T1048,Exfiltration Over Alternative Protocol,Exfiltration

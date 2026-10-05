@@ -1,0 +1,48 @@
+name: flowlake
+version: "0.1.0"
+config-version: 2
+profile: flowlake
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: target
+clean-targets: ["target", "dbt_packages", "logs"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+vars:
+  # Incremental models re-read this much already-loaded bronze data, so a batch that became
+  # visible while a previous run was reading is never skipped. Rows are deduplicated by
+  # record_id, so re-reading is harmless.
+  incremental_lookback_minutes: 30
+
+  # Detection thresholds. Tune them here or with --vars; dbt unit tests pin their behavior.
+  port_scan_min_distinct_ports: 50
+  port_scan_min_failed_ratio: 0.8
+  beaconing_min_connections: 20
+  beaconing_max_cv: 0.2             # stddev / mean of the gaps between connections
+  beaconing_min_interval_seconds: 10
+  beaconing_max_interval_seconds: 3600
+  exfiltration_min_bytes_out: 500000000
+  exfiltration_min_upload_ratio: 0.8
+  dns_tunneling_min_distinct_names: 50
+  dns_tunneling_min_avg_label_length: 20
+
+models:
+  flowlake:
+    staging:
+      +schema: silver
+      +materialized: view
+    marts:
+      +schema: gold
+      +materialized: table
+    exports:
+      +schema: export
+      +materialized: view
+
+seeds:
+  flowlake:
+    +schema: reference

@@ -1,0 +1,99 @@
+[project]
+name = "flowsentinel-lakehouse"
+version = "0.1.0"
+description = "A security data lakehouse for FlowSentinel network flow telemetry: contracts, streaming ingestion, dbt medallion models, SQL detections and orchestration."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "exosphere8" }]
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Database",
+    "Topic :: Security",
+    "Topic :: System :: Networking :: Monitoring",
+]
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pyarrow>=16",
+    "duckdb>=1.2,<2",
+    "dbt-core>=1.10,<2",
+    "dbt-duckdb>=1.10,<2",
+]
+
+[project.optional-dependencies]
+stream = ["confluent-kafka>=2.5,<3"]
+orchestration = ["dagster>=1.10,<2", "dagster-dbt>=0.26", "dagster-webserver>=1.10,<2"]
+
+[project.scripts]
+flowlake = "flowlake.cli:main"
+
+[project.urls]
+Repository = "https://github.com/exosphere8/flowsentinel-lakehouse"
+"Upstream sensor" = "https://github.com/exosphere8/flowsentinel"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/flowlake"]
+
+[tool.dagster]
+module_name = "flowlake.orchestration"
+code_location_name = "flowlake"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "kafka: needs a Kafka-compatible broker at FLOWLAKE_KAFKA_BOOTSTRAP",
+    "upstream: needs the flowsentinel binary at FLOWSENTINEL_BIN",
+    "slow: runs the full pipeline end to end",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:dbt.*",
+    "ignore::DeprecationWarning:dagster.*",
+]
+
+[tool.coverage.run]
+source = ["flowlake"]
+branch = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PTH", "S", "C4", "PT", "RET"]
+ignore = [
+    "S101",  # assert is fine in tests
+    "S603",  # subprocess calls use fixed argument lists, never a shell
+]
+
+# The dashboard uses typographic en dashes for ranges.
+allowed-confusables = ["–"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "PT011", "PT018", "E402"]
+"src/flowlake/sources/synthetic.py" = ["S311"]  # seeded test data, not cryptography
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["flowlake"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["pyarrow.*", "confluent_kafka.*", "dagster.*", "dagster_dbt.*", "dbt.*"]
+ignore_missing_imports = true

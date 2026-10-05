@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: stg_flowsentinel__flows
+    description: >
+      Bronze flow records with derived columns (hour, date, best responder name). Not
+      deduplicated: fct_flows deduplicates on record_id.
+    columns:
+      - name: record_id
+        data_tests: [not_null]
+      - name: first_seen
+        data_tests: [not_null]
+
+  - name: stg_flowsentinel__quarantine
+    description: Records rejected by the ingestion contract.
+    columns:
+      - name: error_type
+        data_tests: [not_null]
+
+  - name: stg_network_zones
+    description: Network zones with their IPv4 ranges as integers.
+    data_tests:
+      - expression_is_true:
+          arguments:
+            expression: "range_end >= range_start"
+    columns:
+      - name: prefix_length
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "prefix_length between 0 and 32"
+
+unit_tests:
+  - name: zone_ranges_cover_the_whole_cidr_block
+    model: stg_network_zones
+    given:
+      - input: ref('network_zones')
+        rows:
+          - {zone: lab, cidr: 10.20.0.0/16, is_internal: true, description: lab}
+          - {zone: host, cidr: 192.0.2.7/32, is_internal: false, description: one host}
+    expect:
+      rows:
+        - {zone: lab, prefix_length: 16, range_start: 169082880, range_end: 169148415}
+        - {zone: host, prefix_length: 32, range_start: 3221225991, range_end: 3221225991}

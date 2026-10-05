@@ -1,0 +1,11 @@
+version: 2
+
+models:
+  - name: ocsf_network_activity
+    description: Flows as OCSF 1.3 Network Activity (class_uid 4001) "Traffic" events.
+    columns:
+      - name: type_uid
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [400106]

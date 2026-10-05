@@ -1,0 +1,2 @@
+rule_id,src_ip,dst_ip,dst_port,reason
+beaconing,*,192.0.2.123,123,NTP time synchronization is periodic by design.

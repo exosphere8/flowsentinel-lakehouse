@@ -1,0 +1,96 @@
+version: 2
+
+models:
+  - name: det_port_scan
+    description: Port scans, per source, target and hour.
+  - name: det_beaconing
+    description: Periodic outbound connections, per source, destination, port and day.
+  - name: det_exfiltration
+    description: Large outbound uploads, per source, destination and day.
+  - name: det_dns_tunneling
+    description: Bursts of long unique DNS names under one domain, per source and hour.
+
+  - name: fct_alerts
+    description: Every detection in one shape, with severity and MITRE ATT&CK mapping.
+    columns:
+      - name: alert_id
+        data_tests: [unique, not_null]
+      - name: rule_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('detection_rules')
+                field: rule_id
+      - name: src_ip
+        data_tests: [not_null]
+      - name: evidence
+        data_tests: [not_null]
+
+unit_tests:
+  - name: beaconing_flags_a_regular_callback
+    description: Twenty-five connections exactly 300 s apart are a beacon.
+    model: det_beaconing
+    overrides:
+      vars:
+        beaconing_min_connections: 20
+    given:
+      - input: ref('fct_flows')
+        format: sql
+        rows: |
+          select '10.20.1.22' as initiator_ip, '203.0.113.66' as responder_ip,
+                 443 as responder_port, date '2026-09-28' as event_date,
+                 timestamptz '2026-09-28 09:00:00+00' + to_seconds(300 * i) as first_seen,
+                 'c2.badactor.example' as responder_name,
+                 'outbound' as direction, 6 as protocol
+          from range(25) as t(i)
+      - input: ref('detection_allowlist')
+        rows: []
+    expect:
+      rows:
+        - {src_ip: 10.20.1.22, dst_ip: 203.0.113.66, dst_port: 443, connections: 25, mean_interval_seconds: 300.0}
+
+  - name: beaconing_ignores_irregular_traffic_and_allowlisted_ntp
+    description: >
+      Human-driven traffic (irregular gaps) and an allowlisted periodic NTP sync must not alert.
+    model: det_beaconing
+    given:
+      - input: ref('fct_flows')
+        format: sql
+        rows: |
+          select '10.20.1.30' as initiator_ip, '198.51.100.10' as responder_ip,
+                 443 as responder_port, date '2026-09-28' as event_date,
+                 timestamptz '2026-09-28 08:00:00+00' + to_seconds(cast(i * i * 7 as bigint)) as first_seen,
+                 'www.example.com' as responder_name, 'outbound' as direction, 6 as protocol
+          from range(30) as t(i)
+          union all
+          select '10.10.0.10', '192.0.2.123', 123, date '2026-09-28',
+                 timestamptz '2026-09-28 00:00:00+00' + to_seconds(1024 * i),
+                 null, 'outbound', 17
+          from range(30) as t(i)
+      - input: ref('detection_allowlist')
+        rows:
+          - {rule_id: beaconing, src_ip: "*", dst_ip: 192.0.2.123, dst_port: "123", reason: ntp}
+    expect:
+      rows: []
+
+  - name: port_scan_needs_many_ports_and_failures
+    description: 60 refused ports alert; 60 successful connections to different ports do not.
+    model: det_port_scan
+    given:
+      - input: ref('fct_flows')
+        format: sql
+        rows: |
+          select '10.20.1.17' as initiator_ip, '10.10.0.20' as responder_ip, 1000 + i as responder_port,
+                 timestamptz '2026-09-29 14:00:00+00' as flow_hour, 'reset' as tcp_state, 6 as protocol,
+                 114 as bytes_total, timestamptz '2026-09-29 14:00:00+00' as first_seen,
+                 timestamptz '2026-09-29 14:00:01+00' as last_seen
+          from range(60) as t(i)
+          union all
+          select '10.20.1.40', '10.10.0.20', 2000 + i, timestamptz '2026-09-29 14:00:00+00',
+                 'closed', 6, 5000, timestamptz '2026-09-29 14:00:00+00',
+                 timestamptz '2026-09-29 14:00:05+00'
+          from range(60) as t(i)
+    expect:
+      rows:
+        - {src_ip: 10.20.1.17, dst_ip: 10.10.0.20, distinct_ports: 60, flows: 60}

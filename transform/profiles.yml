@@ -1,0 +1,12 @@
+# The lake root comes from FLOWLAKE_LAKE. `flowlake transform`, the Makefile and Dagster set it
+# to an absolute path; the default assumes dbt runs from this directory.
+flowlake:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('FLOWLAKE_LAKE', '../lake') }}/warehouse.duckdb"
+      threads: 4
+      settings:
+        # Hour buckets and dates are UTC whatever the machine's time zone is.
+        TimeZone: UTC

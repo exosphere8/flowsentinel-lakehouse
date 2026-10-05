@@ -1,0 +1,65 @@
+version: 2
+
+models:
+  - name: fct_flows
+    description: >
+      One row per flow, deduplicated across batches, transports and replays, and classified
+      by network zone and direction. Incremental: see the model's header comment.
+    data_tests:
+      - expression_is_true:
+          arguments:
+            expression: "bytes_total = i2r_bytes + r2i_bytes"
+      - expression_is_true:
+          arguments:
+            expression: "packets_total = i2r_packets + r2i_packets"
+      - expression_is_true:
+          arguments:
+            expression: "last_seen >= first_seen"
+    columns:
+      - name: record_id
+        data_tests: [unique, not_null]
+      - name: first_seen
+        data_tests: [not_null]
+      - name: initiator_zone
+        data_tests: [not_null]
+      - name: responder_zone
+        data_tests: [not_null]
+      - name: direction
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [internal, outbound, inbound, external]
+      # FlowSentinel may add values; unknown ones warn instead of failing (tolerant reader).
+      - name: tcp_state
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [syn_sent, syn_received, established, midstream, closing, closed, reset]
+              config:
+                severity: warn
+      - name: end_reason
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [idle_timeout, tcp_finished, evicted, capture_end, clock_reset]
+              config:
+                severity: warn
+
+  - name: dim_hosts
+    description: One row per IP address seen in any flow, with its activity profile.
+    columns:
+      - name: ip
+        data_tests: [unique, not_null]
+      - name: zone
+        data_tests: [not_null]
+
+  - name: dim_host_names_scd2
+    description: >
+      Hostnames served by each IP address over time (SCD type 2). valid_to is null for the
+      current version. See tests/assert_scd2_versions_are_contiguous.sql.
+    columns:
+      - name: host_name_key
+        data_tests: [unique, not_null]
+      - name: hostname
+        data_tests: [not_null]

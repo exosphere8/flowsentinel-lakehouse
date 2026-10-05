@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: dq_batches
+    description: Accepted and quarantined records per ingestion batch.
+    columns:
+      - name: batch_id
+        data_tests: [unique, not_null]
+      - name: quarantine_rate
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "quarantine_rate between 0 and 1"
+          # A batch that loses more than 5% of its records needs a look: warn, don't fail.
+          - expression_is_true:
+              name: dq_batches_quarantine_rate_below_5_percent
+              arguments:
+                expression: "quarantine_rate <= 0.05"
+              config:
+                severity: warn

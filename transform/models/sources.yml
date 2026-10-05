@@ -1,0 +1,28 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Validated FlowSentinel records written by the ingestion layer (`flowlake ingest` or the
+      Kafka consumer) as Hive-partitioned Parquet, one file per batch.
+    meta:
+      # DuckDB infers ingest_date as DATE from the partition directory names.
+      external_location: >-
+        read_parquet('{{ env_var("FLOWLAKE_LAKE", "../lake") }}/bronze/{name}/*/*.parquet',
+        hive_partitioning = true, union_by_name = true)
+    config:
+      loaded_at_field: ingested_at
+      freshness:
+        warn_after: {count: 6, period: hour}
+        error_after: {count: 24, period: hour}
+    tables:
+      - name: flows
+        description: One row per flow record that passed the ingestion contract.
+        columns:
+          - name: record_id
+            description: Deterministic ID of (sensor, capture, flow). Not unique in bronze.
+            data_tests: [not_null]
+      - name: quarantine
+        description: Records that failed the contract, with the reason and the raw record.
+        config:
+          freshness: null

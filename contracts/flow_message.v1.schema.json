@@ -1,0 +1,52 @@
+{
+  "$id": "https://github.com/exosphere8/flowsentinel-lakehouse/contracts/flow_message.v1.schema.json",
+  "description": "A message on the flow topic. 'flow' must satisfy flow_record.v1.schema.json.",
+  "properties": {
+    "capture_file": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Capture File"
+    },
+    "capture_id": {
+      "minLength": 1,
+      "title": "Capture Id",
+      "type": "string"
+    },
+    "completion_state": {
+      "minLength": 1,
+      "title": "Completion State",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "flow": {
+      "additionalProperties": true,
+      "title": "Flow",
+      "type": "object"
+    },
+    "sensor_id": {
+      "minLength": 1,
+      "title": "Sensor Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "sensor_id",
+    "capture_id",
+    "completion_state",
+    "flow"
+  ],
+  "title": "FlowMessage",
+  "type": "object"
+}

@@ -1,0 +1,1 @@
+{"error":{"code":"invalid_magic","category":"malformed","message":"not a classic PCAP file: the file does not start with a known PCAP magic number"}}

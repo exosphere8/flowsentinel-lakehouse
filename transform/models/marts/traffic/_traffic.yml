@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: agg_traffic_hourly
+    description: >
+      Traffic per hour, direction, protocol and service. Incremental: hours that receive new
+      or late flows are recomputed completely. See tests/assert_hourly_traffic_reconciles.sql.
+    columns:
+      - name: hour_start
+        data_tests: [not_null]
+      - name: flows
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "flows > 0"
