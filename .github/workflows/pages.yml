@@ -42,7 +42,7 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::notice::GitHub Pages is not enabled for this repository, so the dashboard is only uploaded as an artifact. Enable it under Settings > Pages > Source: GitHub Actions."
           fi
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site/
 
