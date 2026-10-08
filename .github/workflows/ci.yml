@@ -107,7 +107,7 @@ jobs:
       - run: uv sync --all-extras --locked
       - name: Generate, ingest, build, score (fails below precision or recall 1.0)
         run: uv run flowlake demo --workers 4
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: dashboard
           path: site/
