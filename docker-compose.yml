@@ -23,7 +23,7 @@ services:
       start_period: 5s
 
   console:
-    image: redpandadata/console:v3.2.2
+    image: redpandadata/console:v3.12.0
     profiles: ["ui"]
     environment:
       KAFKA_BROKERS: redpanda:9092
