@@ -63,5 +63,5 @@ First release: data contract and quarantine, batch and streaming ingestion into 
 dbt medallion model on DuckDB with four SQL detections mapped to MITRE ATT&CK and an OCSF
 export, Dagster orchestration, the static dashboard, benchmarks and CI.
 
-[0.2.0]: https://github.com/exosphere8/flowsentinel-lakehouse/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/exosphere8/flowsentinel-lakehouse/releases/tag/v0.1.0
+[0.2.0]: https://github.com/exosphere8/flowsentinel-lakehouse/releases/tag/v0.2.0
+[0.1.0]: https://github.com/exosphere8/flowsentinel-lakehouse/tree/8e25305
