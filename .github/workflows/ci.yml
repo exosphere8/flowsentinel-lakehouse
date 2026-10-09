@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Every Monday, even without changes: rebuilds the suite from fresh base images and the
+  # pinned FlowSentinel commit, so outside drift shows up here before it reaches a user.
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
