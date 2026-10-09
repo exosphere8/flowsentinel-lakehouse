@@ -22,8 +22,8 @@ jobs:
     name: Lint, types and contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync --all-extras --locked
@@ -41,8 +41,8 @@ jobs:
       matrix:
         python: ["3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
@@ -54,8 +54,8 @@ jobs:
     name: Streaming against Redpanda
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync --all-extras --locked
@@ -73,9 +73,9 @@ jobs:
     name: Contract against FlowSentinel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Check out FlowSentinel
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: exosphere8/flowsentinel
           ref: ${{ env.FLOWSENTINEL_REF }}
@@ -86,7 +86,7 @@ jobs:
           workspaces: flowsentinel
       - name: Build the flowsentinel CLI
         run: cargo build --release --locked -p cli --manifest-path flowsentinel/Cargo.toml
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync --all-extras --locked
@@ -100,14 +100,14 @@ jobs:
     name: Demo pipeline and detection scores
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync --all-extras --locked
       - name: Generate, ingest, build, score (fails below precision or recall 1.0)
         run: uv run flowlake demo --workers 4
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: dashboard
           path: site/
@@ -117,6 +117,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Build both images, start the suite, ingest captures, check the dashboard
         run: deploy/smoke-test.sh
