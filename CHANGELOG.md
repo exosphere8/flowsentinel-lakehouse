@@ -4,6 +4,19 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `flowlake stream consume --idle-timeout` could stop before its consumer group had joined
+  (a slow first connection or a broker's rebalance delay) and read nothing. The idle clock now
+  starts when partitions are assigned, and a group that is never joined is reported as an
+  error after 60 seconds.
+
+### Changed
+
+- GitHub Actions and the Redpanda Console image updated (Dependabot).
+
 ## [0.2.0] - 2026-10-09
 
 The lakehouse becomes something you can run on your own network: a self-hosted suite, real

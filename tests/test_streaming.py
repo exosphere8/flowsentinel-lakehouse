@@ -162,3 +162,91 @@ def test_a_replay_duplicates_bronze_but_not_the_gold_layer(tmp_path: Path, topic
         assert connection.execute(
             "select count(*), count(distinct record_id) from gold.fct_flows"
         ).fetchone() == (unique, unique)
+
+
+class _Message:
+    def __init__(self, offset: int, value: bytes) -> None:
+        self._offset, self._value = offset, value
+
+    def error(self) -> None:
+        return None
+
+    def partition(self) -> int:
+        return 0
+
+    def offset(self) -> int:
+        return self._offset
+
+    def value(self) -> bytes:
+        return self._value
+
+
+class _SlowToJoinConsumer:
+    """Stands in for confluent_kafka.Consumer: the group assigns its partition only after
+    ``join_seconds``, like a broker with a rebalance delay or a slow first connection."""
+
+    join_seconds = 0.6
+
+    def __init__(self, _config: dict[str, Any]) -> None:
+        import time
+
+        self._created = time.monotonic()
+        self._assigned = False
+        self._queue = [
+            _Message(offset, value)
+            for offset, (_, value) in enumerate(messages(capture_flows(CONFIG)[0]))
+        ]
+        self.committed: list[Any] = []
+
+    def subscribe(self, _topics: list[str], on_assign: Any = None, on_revoke: Any = None) -> None:
+        self._on_assign = on_assign
+
+    def consume(self, num_messages: int, timeout: float) -> list[_Message]:
+        import time
+
+        if not self._assigned:
+            if time.monotonic() - self._created < self.join_seconds:
+                time.sleep(min(timeout, 0.05))
+                return []
+            self._assigned = True
+            if self._on_assign is not None:
+                self._on_assign(self, [])
+        batch, self._queue = self._queue[:num_messages], self._queue[num_messages:]
+        if not batch:
+            time.sleep(min(timeout, 0.05))
+        return batch
+
+    def commit(self, offsets: Any, asynchronous: bool) -> None:
+        self.committed.append(offsets)
+
+    def close(self) -> None:
+        pass
+
+
+def test_the_idle_timeout_starts_when_the_group_has_assigned_partitions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    confluent_kafka = pytest.importorskip("confluent_kafka")
+    from flowlake.streaming import BronzeConsumer
+
+    monkeypatch.setattr(confluent_kafka, "Consumer", _SlowToJoinConsumer)
+    expected = len(capture_flows(CONFIG)[0].flows)
+    consumer = BronzeConsumer(Lake(tmp_path / "lake"), topic="t", group_id="g", batch_seconds=0.1)
+    # Joining takes longer than the idle timeout; the consumer must still read everything.
+    consumer.run(idle_timeout=0.2)
+    assert sum(r.records_in for r in consumer.results) == expected > 0
+
+
+def test_a_group_that_is_never_joined_is_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    confluent_kafka = pytest.importorskip("confluent_kafka")
+    from flowlake.streaming import BronzeConsumer
+
+    class NeverJoins(_SlowToJoinConsumer):
+        join_seconds = 3600.0
+
+    monkeypatch.setattr(confluent_kafka, "Consumer", NeverJoins)
+    consumer = BronzeConsumer(Lake(tmp_path / "lake"), topic="t", group_id="g")
+    with pytest.raises(TimeoutError, match="no partitions of t were assigned within 0 s"):
+        consumer.run(idle_timeout=0.1, join_timeout=0.3)

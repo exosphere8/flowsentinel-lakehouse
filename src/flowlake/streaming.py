@@ -141,6 +141,7 @@ class BronzeConsumer:
         self.batch_seconds = batch_seconds
         self.results: list[BatchResult] = []
         self._pending: list[Any] = []
+        self._assigned_at: float | None = None
         self._consumer = Consumer(
             {
                 "bootstrap.servers": bootstrap,
@@ -150,17 +151,35 @@ class BronzeConsumer:
                 "isolation.level": "read_committed",
             }
         )
-        self._consumer.subscribe([topic], on_revoke=self._on_revoke)
+        self._consumer.subscribe([topic], on_assign=self._on_assign, on_revoke=self._on_revoke)
+
+    def _on_assign(self, _consumer: Any, _partitions: Any) -> None:
+        # Joining the group can take seconds (a broker's rebalance delay, a slow first
+        # connection), and nothing can arrive before it, so the idle clock starts here.
+        if self._assigned_at is None:
+            self._assigned_at = time.monotonic()
 
     def _on_revoke(self, _consumer: Any, _partitions: Any) -> None:
         # Flush before partitions move to another consumer, so it does not replay them.
         self.flush()
 
-    def run(self, *, idle_timeout: float | None = None, max_batches: int | None = None) -> None:
+    def run(
+        self,
+        *,
+        idle_timeout: float | None = None,
+        max_batches: int | None = None,
+        join_timeout: float = 60.0,
+    ) -> None:
         """Consume until ``idle_timeout`` seconds pass without a message or ``max_batches``
-        batches are written. With neither, run until interrupted."""
-        last_message = time.monotonic()
-        batch_started = time.monotonic()
+        batches are written. With neither, run until interrupted.
+
+        The idle clock starts once the consumer group has assigned partitions. With an idle
+        timeout, a group that is not joined within ``join_timeout`` seconds is an error: the
+        broker is probably unreachable.
+        """
+        started = time.monotonic()
+        last_message = started
+        batch_started = started
         try:
             while max_batches is None or len(self.results) < max_batches:
                 records = self._consumer.consume(
@@ -181,8 +200,15 @@ class BronzeConsumer:
                 due = bool(self._pending) and now - batch_started >= self.batch_seconds
                 if full or due:
                     self.flush()
-                elif idle_timeout is not None and now - last_message >= idle_timeout:
-                    break
+                elif idle_timeout is not None:
+                    if self._assigned_at is None:
+                        if now - started >= join_timeout:
+                            raise TimeoutError(
+                                f"no partitions of {self.topic} were assigned within "
+                                f"{join_timeout:.0f} s; is the broker reachable?"
+                            )
+                    elif now - max(last_message, self._assigned_at) >= idle_timeout:
+                        break
             self.flush()
         finally:
             self._consumer.close()
