@@ -49,7 +49,8 @@ and credits you unless you prefer otherwise. Problems in FlowSentinel itself go 
 - **Configuration.** Zones, allowlist and thresholds are validated before any run, so a typo
   cannot silently disable a detection. Every allowlist row needs a written reason.
 - **Supply chain.** Python dependencies are pinned in `uv.lock` and installed with `--frozen`;
-  the FlowSentinel source is pinned to a commit. Dependabot proposes updates, and CI runs the
-  full test suite, the contract test against FlowSentinel and the suite smoke test on each.
+  the FlowSentinel source is pinned to a commit. Updates are deliberate (`make upgrade`), and
+  CI runs the full test suite, the contract test against FlowSentinel and the suite smoke test
+  on every change.
 - **Synthetic test data.** Generated traffic uses documentation and private address ranges and
   reserved domain names, so tests never point at a real host.

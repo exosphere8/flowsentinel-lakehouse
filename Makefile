@@ -6,10 +6,15 @@ export FLOWLAKE_LAKE := $(abspath $(LAKE))
 export FLOWLAKE_LANDING := $(abspath $(LANDING))
 export FLOWLAKE_SITE := $(abspath $(SITE))
 
-.PHONY: install demo ingest transform report dagster up down stream-demo suite suite-test lint test test-all check clean
+.PHONY: install upgrade demo ingest transform report dagster up down stream-demo suite suite-test lint test test-all check clean
 
 install:            ## Install the package with every extra and the dev tools
 	uv sync --all-extras
+
+upgrade:            ## Move every Python dependency to its newest allowed version, then run the checks
+	uv lock --upgrade
+	uv sync --all-extras
+	$(MAKE) check
 
 demo:               ## Generate data, ingest, build, score the detections, write the dashboard
 	uv run flowlake --lake $(LAKE) demo --landing $(LANDING) --out $(SITE)

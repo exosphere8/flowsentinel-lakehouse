@@ -4,7 +4,7 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.1] - 2026-10-09
 
 ### Fixed
 
@@ -15,7 +15,11 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
-- GitHub Actions and the Redpanda Console image updated (Dependabot).
+- GitHub Actions moved to their current versions (`checkout` 7, `setup-uv` 7,
+  `upload-artifact` 6, `upload-pages-artifact` 5, `deploy-pages` 5), and the optional Redpanda
+  Console to v3.12.0.
+- Dependency updates are no longer automated: `make upgrade` moves every Python dependency to
+  its newest allowed version and runs the checks.
 
 ## [0.2.0] - 2026-10-09
 
@@ -76,5 +80,6 @@ First release: data contract and quarantine, batch and streaming ingestion into 
 dbt medallion model on DuckDB with four SQL detections mapped to MITRE ATT&CK and an OCSF
 export, Dagster orchestration, the static dashboard, benchmarks and CI.
 
+[0.2.1]: https://github.com/exosphere8/flowsentinel-lakehouse/releases/tag/v0.2.1
 [0.2.0]: https://github.com/exosphere8/flowsentinel-lakehouse/releases/tag/v0.2.0
 [0.1.0]: https://github.com/exosphere8/flowsentinel-lakehouse/tree/8e25305

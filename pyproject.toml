@@ -1,6 +1,6 @@
 [project]
 name = "flowsentinel-lakehouse"
-version = "0.2.0"
+version = "0.2.1"
 description = "A security data lakehouse for FlowSentinel network flow telemetry: contracts, streaming ingestion, dbt medallion models, SQL detections and orchestration."
 readme = "README.md"
 license = "MIT"
