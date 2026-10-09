@@ -22,7 +22,7 @@ jobs:
     name: Lint, types and contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -41,7 +41,7 @@ jobs:
       matrix:
         python: ["3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -54,7 +54,7 @@ jobs:
     name: Streaming against Redpanda
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -73,9 +73,9 @@ jobs:
     name: Contract against FlowSentinel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Check out FlowSentinel
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: exosphere8/flowsentinel
           ref: ${{ env.FLOWSENTINEL_REF }}
@@ -100,7 +100,7 @@ jobs:
     name: Demo pipeline and detection scores
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -117,6 +117,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Build both images, start the suite, ingest captures, check the dashboard
         run: deploy/smoke-test.sh
