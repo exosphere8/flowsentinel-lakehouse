@@ -5,7 +5,7 @@ description = "A security data lakehouse for FlowSentinel network flow telemetry
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "exosphere8" }]
+authors = [{ name = "Midnight Croissant" }]
 requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
