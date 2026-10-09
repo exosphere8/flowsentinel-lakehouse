@@ -31,7 +31,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         code: int = args.handler(args)
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError) as exc:  # includes ConfigError
         print(f"error: {exc}", file=sys.stderr)
         return 2
     return code
@@ -49,7 +49,17 @@ def _parser() -> argparse.ArgumentParser:
         default=Path(os.environ.get("FLOWLAKE_LAKE", DEFAULT_LAKE)),
         help="lake root directory (default: $FLOWLAKE_LAKE or ./lake)",
     )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(os.environ["FLOWLAKE_CONFIG"]) if os.environ.get("FLOWLAKE_CONFIG") else None,
+        help="deployment configuration directory: network zones, allowlist, thresholds "
+        "(default: $FLOWLAKE_CONFIG, else the built-in defaults)",
+    )
     commands = parser.add_subparsers(title="commands", metavar="COMMAND")
+
+    config = commands.add_parser("config", help="validate the configuration directory")
+    config.set_defaults(handler=_config)
 
     generate = commands.add_parser("generate", help="write synthetic FlowSentinel captures")
     _synthetic_options(generate)
@@ -229,11 +239,32 @@ def _transform(args: argparse.Namespace) -> int:
     from flowlake.transform import build, source_freshness
 
     lake = Lake(args.lake)
-    result = build(lake, full_refresh=args.full_refresh, select=args.select, variables=args.vars)
+    result = build(
+        lake,
+        full_refresh=args.full_refresh,
+        select=args.select,
+        variables=args.vars,
+        config_dir=args.config,
+    )
     if not result.success:
         return 1
-    if args.freshness and not source_freshness(lake).success:
+    if args.freshness and not source_freshness(lake, config_dir=args.config).success:
         return 1
+    return 0
+
+
+def _config(args: argparse.Namespace) -> int:
+    from flowlake.project import load_config, packaged_project_dir
+
+    if args.config is None:
+        print("no configuration directory given (--config or FLOWLAKE_CONFIG): using defaults")
+        return 0
+    overrides, variables = load_config(args.config, packaged_project_dir())
+    print(f"{args.config} is valid")
+    for path in sorted(overrides):
+        print(f"  replaces {path}")
+    for name, value in sorted(variables.items()):
+        print(f"  {name} = {value}")
     return 0
 
 
@@ -262,12 +293,14 @@ def _demo(args: argparse.Namespace) -> int:
     from flowlake.transform import build
 
     lake = Lake(args.lake)
+    # The demo office's own zones (headquarters, branch, servers) unless told otherwise.
+    config = args.config or Path(__file__).parent / "demo_config"
     print(f"1/5 generating synthetic captures in {args.landing}")
     truth = generate(_synthetic_config(args), args.landing)
     print(f"2/5 ingesting into {args.lake}")
     _print_results(ingest_path(lake, args.landing, workers=args.workers))
     print("3/5 running dbt build")
-    if not build(lake).success:
+    if not build(lake, config_dir=config).success:
         return 1
     print("4/5 scoring detections against the ground truth")
     evaluation = evaluate(lake, truth)
@@ -308,6 +341,9 @@ def _produce(args: argparse.Namespace) -> int:
 
 
 def _file_captures(args: argparse.Namespace) -> Iterator[CaptureFlows]:
+    """Captures from files, identified exactly as `flowlake ingest` identifies them."""
+    import tempfile
+
     from flowlake.ingest import DEFAULT_SENSOR, discover, sensor_from_path
     from flowlake.sources.flowsentinel import (
         SourceError,
@@ -316,27 +352,41 @@ def _file_captures(args: argparse.Namespace) -> Iterator[CaptureFlows]:
         sha256_file,
         sha256_hex,
     )
+    from flowlake.sources.pcap import CaptureFormatError, prepare_capture
     from flowlake.streaming import CaptureFlows
 
     for file in discover(args.path):
         sensor = args.sensor or sensor_from_path(file) or DEFAULT_SENSOR
-        try:
-            if file.suffix.lower() == ".pcap":
-                data, digest = run_flows_cli(file, binary=args.flowsentinel_bin), sha256_file(file)
-            else:
-                data = file.read_bytes()
-                digest = sha256_hex(data)
-            capture = parse_document(data)
-        except SourceError as exc:
-            print(f"skipped {file}: {exc}", file=sys.stderr)
-            continue
-        yield CaptureFlows(
-            sensor,
-            f"sha256:{digest}",
-            capture.capture_file,
-            capture.completion_state,
-            capture.flows,
-        )
+        if file.suffix.lower() == ".json":
+            data = file.read_bytes()
+            documents = [(data, sha256_hex(data))]
+        else:
+            with tempfile.TemporaryDirectory(prefix="flowlake-capture-") as scratch:
+                try:
+                    prepared = prepare_capture(file, Path(scratch))
+                    documents = [
+                        (
+                            run_flows_cli(part, binary=args.flowsentinel_bin),
+                            sha256_file(file if prepared.unchanged else part),
+                        )
+                        for part in prepared.parts
+                    ]
+                except (CaptureFormatError, SourceError, OSError) as exc:
+                    print(f"skipped {file}: {exc}", file=sys.stderr)
+                    continue
+        for data, digest in documents:
+            try:
+                capture = parse_document(data)
+            except SourceError as exc:
+                print(f"skipped {file}: {exc}", file=sys.stderr)
+                continue
+            yield CaptureFlows(
+                sensor,
+                f"sha256:{digest}",
+                capture.capture_file,
+                capture.completion_state,
+                capture.flows,
+            )
 
 
 def _synthetic_captures(args: argparse.Namespace) -> Iterator[CaptureFlows]:

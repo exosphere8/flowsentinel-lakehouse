@@ -1,0 +1,12 @@
+# Dagster instance settings for the self-hosted suite.
+run_queue:
+  # One run at a time: runs share the DuckDB warehouse, which allows a single writer.
+  max_concurrent_runs: 1
+telemetry:
+  enabled: false
+retention:
+  sensor:
+    purge_after_days:
+      skipped: 7
+      failure: 30
+      success: -1

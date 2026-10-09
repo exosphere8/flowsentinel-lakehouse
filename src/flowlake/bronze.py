@@ -192,7 +192,8 @@ class RecordContext:
 class BatchResult:
     batch_id: str
     # "ingested"; "skipped" (already in the ledger); "rejected" (the input can never be
-    # ingested, ledgered); "failed" (an operational error, not ledgered, retried next run)
+    # ingested, ledgered); "failed" (an operational error, not ledgered, retried next run);
+    # "split" (a capture ingested as several parts, each with its own batch)
     status: str
     source: str
     input_ref: str
@@ -429,6 +430,11 @@ def _atomic_write_table(table: pa.Table, target: Path) -> None:
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def atomic_copy(source: Path, target: Path) -> None:
+    """Copy a file so that readers see either the old or the new version, never a mix."""
+    _atomic_write_bytes(source.read_bytes(), target)
 
 
 def _atomic_write_bytes(data: bytes, target: Path) -> None:

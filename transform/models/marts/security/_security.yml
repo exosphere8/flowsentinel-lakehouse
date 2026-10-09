@@ -32,8 +32,12 @@ unit_tests:
     description: Twenty-five connections exactly 300 s apart are a beacon.
     model: det_beaconing
     overrides:
+      # Pinned, so a deployment that tunes thresholds does not change what is tested.
       vars:
         beaconing_min_connections: 20
+        beaconing_max_cv: 0.2
+        beaconing_min_interval_seconds: 10
+        beaconing_max_interval_seconds: 3600
     given:
       - input: ref('fct_flows')
         format: sql
@@ -54,6 +58,13 @@ unit_tests:
     description: >
       Human-driven traffic (irregular gaps) and an allowlisted periodic NTP sync must not alert.
     model: det_beaconing
+    overrides:
+      # Pinned, so a deployment that tunes thresholds does not change what is tested.
+      vars:
+        beaconing_min_connections: 20
+        beaconing_max_cv: 0.2
+        beaconing_min_interval_seconds: 10
+        beaconing_max_interval_seconds: 3600
     given:
       - input: ref('fct_flows')
         format: sql
@@ -77,6 +88,10 @@ unit_tests:
   - name: port_scan_needs_many_ports_and_failures
     description: 60 refused ports alert; 60 successful connections to different ports do not.
     model: det_port_scan
+    overrides:
+      vars:
+        port_scan_min_distinct_ports: 50
+        port_scan_min_failed_ratio: 0.8
     given:
       - input: ref('fct_flows')
         format: sql

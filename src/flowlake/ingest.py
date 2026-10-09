@@ -1,15 +1,17 @@
 """Batch ingestion of FlowSentinel documents and pcaps into bronze.
 
-A landing directory may hold ``*.json`` documents printed by ``flowsentinel flows --json`` and
-``*.pcap`` files, which are run through the FlowSentinel CLI. The sensor that produced a file is
-taken from a ``sensor=<id>`` directory in its path, unless one is given explicitly. Files and
-directories whose names start with ``_`` or ``.`` are ignored (for example ``_ground_truth.json``).
+A landing directory may hold ``*.json`` documents printed by ``flowsentinel flows --json``
+and captures (``*.pcap``, ``*.pcapng``, ``*.cap``), which are run through the FlowSentinel
+CLI. The sensor that produced a file is taken from a ``sensor=<id>`` directory in its path,
+unless one is given explicitly. Files and directories whose names start with ``_`` or ``.``
+are ignored (for example ``_ground_truth.json``).
 """
 
 from __future__ import annotations
 
 import multiprocessing
 import re
+import tempfile
 from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
 from itertools import repeat
@@ -23,9 +25,11 @@ from flowlake.sources.flowsentinel import (
     sha256_file,
     sha256_hex,
 )
+from flowlake.sources.pcap import MAX_PACKETS_PER_RUN, CaptureFormatError, prepare_capture
 
 _SENSOR_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-_SUFFIXES = frozenset({".json", ".pcap"})
+_CAPTURE_SUFFIXES = frozenset({".pcap", ".pcapng", ".cap"})
+_SUFFIXES = _CAPTURE_SUFFIXES | {".json"}
 DEFAULT_SENSOR = "default"
 
 
@@ -90,16 +94,87 @@ def ingest_pcap(
     sensor_id: str,
     binary: str | None = None,
     force: bool = False,
-) -> BatchResult:
-    """Run a pcap through the FlowSentinel CLI and ingest the result."""
+    max_packets: int = MAX_PACKETS_PER_RUN,
+) -> list[BatchResult]:
+    """Run a capture through the FlowSentinel CLI and ingest the result.
+
+    pcapng files are converted and captures with more than ``max_packets`` packets are split
+    first (see :mod:`flowlake.sources.pcap`); each part is its own batch. The source file gets
+    a ledger entry too once every part is done, so a re-run skips it without reading it again.
+    """
     validate_sensor_id(sensor_id)
     content_sha256 = sha256_file(pcap)
     batch_id = file_batch_id(sensor_id, content_sha256)
     # Check the ledger before running the CLI: a finished capture is not decoded twice.
     if not force and (skipped := _skip_if_done(lake, batch_id, "flowsentinel_pcap", str(pcap))):
+        return [skipped]
+    with tempfile.TemporaryDirectory(prefix="flowlake-capture-") as scratch:
+        try:
+            prepared = prepare_capture(pcap, Path(scratch), max_packets=max_packets)
+        except (CaptureFormatError, OSError) as exc:
+            reason = f"cannot read the capture: {exc}"
+            return [
+                _reject(
+                    lake,
+                    batch_id,
+                    "flowsentinel_pcap",
+                    str(pcap),
+                    reason,
+                    sensor_id,
+                    datetime.now(UTC),
+                )
+            ]
+        if prepared.unchanged:
+            return [
+                _ingest_capture_file(
+                    lake, pcap, content_sha256, str(pcap), sensor_id, binary, force=True
+                )
+            ]
+        results = []
+        for index, part in enumerate(prepared.parts, start=1):
+            reference = f"{pcap}#part{index}"
+            results.append(
+                _ingest_capture_file(
+                    lake, part, sha256_file(part), reference, sensor_id, binary, force=force
+                )
+            )
+    if all(result.status != "failed" for result in results):
+        summary = BatchResult(
+            batch_id=batch_id,
+            status="split",
+            source="flowsentinel_pcap",
+            input_ref=str(pcap),
+            records_in=sum(r.records_in for r in results),
+            records_written=sum(r.records_written for r in results),
+            records_quarantined=sum(r.records_quarantined for r in results),
+            ingested_at=datetime.now(UTC).isoformat(),
+        )
+        write_ledger(
+            lake,
+            summary,
+            sensor_id=sensor_id,
+            converted=prepared.converted,
+            parts=[r.batch_id for r in results],
+        )
+    return results
+
+
+def _ingest_capture_file(
+    lake: Lake,
+    capture: Path,
+    content_sha256: str,
+    input_ref: str,
+    sensor_id: str,
+    binary: str | None,
+    *,
+    force: bool,
+) -> BatchResult:
+    """Run one classic pcap through the CLI and ingest its flows."""
+    batch_id = file_batch_id(sensor_id, content_sha256)
+    if not force and (skipped := _skip_if_done(lake, batch_id, "flowsentinel_pcap", input_ref)):
         return skipped
     try:
-        output = run_flows_cli(pcap, binary=binary)
+        output = run_flows_cli(capture, binary=binary)
     except SourceError as exc:
         # Operational (binary missing, timeout, crash): not ledgered, so the next run retries.
         # A capture that FlowSentinel itself rejects is ledgered by ingest_document below.
@@ -107,7 +182,7 @@ def ingest_pcap(
             batch_id=batch_id,
             status="failed",
             source="flowsentinel_pcap",
-            input_ref=str(pcap),
+            input_ref=input_ref,
             error=str(exc),
         )
     return ingest_document(
@@ -115,7 +190,7 @@ def ingest_pcap(
         output,
         sensor_id=sensor_id,
         source="flowsentinel_pcap",
-        input_ref=str(pcap),
+        input_ref=input_ref,
         content_sha256=content_sha256,
         force=True,
     )
@@ -143,29 +218,33 @@ def ingest_path(
     for sensor in sensors:
         validate_sensor_id(sensor)
     if workers <= 1 or len(files) <= 1:
-        return [
+        batches = [
             _ingest_file(lake, f, s, binary, force) for f, s in zip(files, sensors, strict=True)
         ]
-    context = multiprocessing.get_context("spawn")
-    with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
-        return list(
-            pool.map(_ingest_file, repeat(lake), files, sensors, repeat(binary), repeat(force))
-        )
+    else:
+        context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
+            batches = list(
+                pool.map(_ingest_file, repeat(lake), files, sensors, repeat(binary), repeat(force))
+            )
+    return [result for batch in batches for result in batch]
 
 
 def _ingest_file(
     lake: Lake, file: Path, sensor_id: str, binary: str | None, force: bool
-) -> BatchResult:
-    if file.suffix.lower() == ".pcap":
+) -> list[BatchResult]:
+    if file.suffix.lower() in _CAPTURE_SUFFIXES:
         return ingest_pcap(lake, file, sensor_id=sensor_id, binary=binary, force=force)
-    return ingest_document(
-        lake,
-        file.read_bytes(),
-        sensor_id=sensor_id,
-        source="flowsentinel_json",
-        input_ref=str(file),
-        force=force,
-    )
+    return [
+        ingest_document(
+            lake,
+            file.read_bytes(),
+            sensor_id=sensor_id,
+            source="flowsentinel_json",
+            input_ref=str(file),
+            force=force,
+        )
+    ]
 
 
 def discover(path: Path) -> list[Path]:

@@ -21,7 +21,7 @@ from flowlake.streaming import CaptureFlows, add_message, kafka_batch_id, messag
 
 from .conftest import load_fixture
 
-BOOTSTRAP = os.environ.get("FLOWLAKE_KAFKA_BOOTSTRAP")
+BOOTSTRAP = os.environ.get("FLOWLAKE_KAFKA_BOOTSTRAP") or None  # empty means unset
 CONFIG = SyntheticConfig(
     start=date(2026, 9, 28), days=1, workstations_per_sensor=4, corrupt_rate=0.01
 )

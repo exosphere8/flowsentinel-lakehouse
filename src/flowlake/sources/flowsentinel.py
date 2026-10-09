@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -18,6 +19,18 @@ from flowlake.contract import FlowsDocument, UpstreamErrorDocument, summarize_er
 # Exit codes of `flowsentinel flows` after which stdout holds a JSON document:
 # 0 success, 3 rejected input, 4 malformed capture, 5 I/O error.
 _JSON_EXIT_CODES = frozenset({0, 3, 4, 5})
+
+# The CLI's own maximums. Each run then reads up to one million packets for up to an hour.
+DEFAULT_CLI_LIMITS = (
+    "--max-file-size-mb",
+    "65536",
+    "--max-packets",
+    "1000000",
+    "--max-duration-seconds",
+    "3600",
+    "--max-flows",
+    "1000000",
+)
 
 
 class SourceError(Exception):
@@ -85,9 +98,22 @@ def find_binary(binary: str | None = None) -> str:
     return found
 
 
-def run_flows_cli(pcap: Path, *, binary: str | None = None, timeout: float = 900.0) -> bytes:
-    """Run ``flowsentinel flows --json`` on a pcap and return its stdout."""
-    command = [find_binary(binary), "flows", "--json", "--pcap", str(pcap)]
+def cli_limits() -> list[str]:
+    """Limit options for ``flowsentinel flows``.
+
+    The defaults are the CLI's maximums, so real captures are analyzed completely; inputs are
+    split into parts of at most one million packets beforehand (:mod:`flowlake.sources.pcap`).
+    FLOWLAKE_FLOWSENTINEL_ARGS replaces them, for example on a small machine.
+    """
+    configured = os.environ.get("FLOWLAKE_FLOWSENTINEL_ARGS")
+    if configured is not None:
+        return shlex.split(configured)
+    return list(DEFAULT_CLI_LIMITS)
+
+
+def run_flows_cli(pcap: Path, *, binary: str | None = None, timeout: float = 3_900.0) -> bytes:
+    """Run ``flowsentinel flows --json`` on a classic pcap and return its stdout."""
+    command = [find_binary(binary), "flows", "--json", "--pcap", str(pcap), *cli_limits()]
     try:
         completed = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired:

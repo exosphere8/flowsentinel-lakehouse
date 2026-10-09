@@ -1,7 +1,9 @@
 -- Data quality per ingestion batch: how many records were accepted and quarantined, and why.
 with accepted as (
     select batch_id, any_value(sensor_id) as sensor_id, any_value(source) as source,
-        any_value(capture_file) as capture_file, max(ingested_at) as ingested_at,
+        any_value(capture_file) as capture_file,
+        any_value(capture_completion_state) as capture_completion_state,
+        max(ingested_at) as ingested_at,
         count(*) as records_accepted, count(distinct record_id) as distinct_records
     from {{ ref('stg_flowsentinel__flows') }}
     group by batch_id
@@ -20,6 +22,9 @@ select
     coalesce(a.sensor_id, r.sensor_id) as sensor_id,
     coalesce(a.source, r.source) as source,
     a.capture_file,
+    -- "complete", or why FlowSentinel stopped early (packet_limit_reached, time_limit_reached).
+    a.capture_completion_state,
+    coalesce(a.capture_completion_state, 'complete') != 'complete' as capture_was_cut_short,
     coalesce(a.ingested_at, r.ingested_at) as ingested_at,
     coalesce(a.records_accepted, 0) as records_accepted,
     coalesce(r.records_quarantined, 0) as records_quarantined,

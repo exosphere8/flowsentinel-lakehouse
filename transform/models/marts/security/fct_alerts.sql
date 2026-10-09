@@ -1,5 +1,7 @@
 -- Every detection in one shape, enriched with rule metadata and MITRE ATT&CK names.
 -- alert_id is a hash of the rule and the detection's key, so it is stable across rebuilds.
+-- Detections that match the allowlist (seed or deployment configuration) are left out; '*'
+-- matches anything, and an alert without a destination address or port matches only '*'.
 with alerts as (
     select
         'port_scan' as rule_id,
@@ -101,3 +103,11 @@ select
 from alerts as a
 inner join {{ ref('detection_rules') }} as r on r.rule_id = a.rule_id
 inner join {{ ref('mitre_techniques') }} as m on m.technique_id = r.mitre_technique_id
+where not exists (
+    select 1
+    from {{ ref('detection_allowlist') }} as w
+    where w.rule_id = a.rule_id
+        and (w.src_ip = '*' or w.src_ip = a.src_ip)
+        and (w.dst_ip = '*' or w.dst_ip = a.dst_ip)
+        and (w.dst_port = '*' or w.dst_port = cast(a.dst_port as varchar))
+)

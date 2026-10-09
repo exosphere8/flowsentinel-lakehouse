@@ -19,6 +19,7 @@ dependencies = [
     "duckdb>=1.2,<2",
     "dbt-core>=1.10,<2",
     "dbt-duckdb>=1.10,<2",
+    "pyyaml>=6",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +39,7 @@ dev = [
     "pytest-cov>=5",
     "ruff>=0.6",
     "mypy>=1.11",
+    "types-pyyaml>=6",
 ]
 
 [build-system]
@@ -46,6 +48,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/flowlake"]
+
+# The dbt project ships inside the package, so `pip install` gives a working lakehouse.
+[tool.hatch.build.targets.wheel.force-include]
+"transform/dbt_project.yml" = "flowlake/dbt_project/dbt_project.yml"
+"transform/profiles.yml" = "flowlake/dbt_project/profiles.yml"
+"transform/models" = "flowlake/dbt_project/models"
+"transform/macros" = "flowlake/dbt_project/macros"
+"transform/seeds" = "flowlake/dbt_project/seeds"
+"transform/tests" = "flowlake/dbt_project/tests"
 
 [tool.dagster]
 module_name = "flowlake.orchestration"

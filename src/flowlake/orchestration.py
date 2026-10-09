@@ -6,11 +6,14 @@
 
 Run ``dagster dev`` in the repository root (``pyproject.toml`` points Dagster at this module).
 Paths come from FLOWLAKE_LAKE, FLOWLAKE_LANDING and FLOWLAKE_SITE (defaults: ./lake,
-./landing, ./site). A sensor starts a run when new files land; a schedule runs hourly anyway,
-so source freshness and late data are handled even when nothing new arrives.
+./landing, ./site) and the deployment configuration from FLOWLAKE_CONFIG (see
+:mod:`flowlake.project`). A sensor starts a run when new files land; a schedule runs hourly
+anyway, so streamed data, freshness and late data are handled when no file arrives. Both start
+stopped, unless FLOWLAKE_AUTOMATION is on (the self-hosted suite turns it on).
 """
 
 # No `from __future__ import annotations` here: Dagster inspects the runtime type hints.
+import json
 import os
 import shutil
 import subprocess
@@ -47,10 +50,10 @@ from dagster import (
 )
 from dagster_dbt import DbtCliResource, DbtProject, dbt_assets, get_asset_key_for_model
 
-from flowlake.bronze import Lake
+from flowlake.bronze import Lake, atomic_copy
 from flowlake.ingest import discover, ingest_path
+from flowlake.project import config_dir_from_env, prepare_project
 from flowlake.report import write_report
-from flowlake.transform import dbt_project_dir
 
 BRONZE_FLOWS = AssetKey(["bronze", "flows"])
 BRONZE_QUARANTINE = AssetKey(["bronze", "quarantine"])
@@ -111,7 +114,17 @@ def _prepare(project: DbtProject) -> DbtProject:
     return project
 
 
-dbt_project = _prepare(DbtProject(project_dir=dbt_project_dir(), profiles_dir=dbt_project_dir()))
+def _automation_status() -> bool:
+    return os.environ.get("FLOWLAKE_AUTOMATION", "").strip().lower() in {"1", "true", "on", "yes"}
+
+
+# The project with this deployment's configuration (zones, allowlist, thresholds).
+SETTINGS = prepare_project(
+    Lake(Path(os.environ.get("FLOWLAKE_LAKE", "lake")).resolve()), config_dir_from_env()
+)
+dbt_project = _prepare(
+    DbtProject(project_dir=SETTINGS.project_dir, profiles_dir=SETTINGS.project_dir)
+)
 
 
 def dbt_resource() -> DbtCliResource:
@@ -199,7 +212,15 @@ def dbt_models(
 ) -> Iterator[Any]:
     """Every dbt model and seed is an asset; every dbt test is an asset check."""
     lakehouse.export_lake_path()
-    yield from dbt.cli(["build"], context=context).stream()
+    args = ["build"]
+    if SETTINGS.variables:
+        args += ["--vars", json.dumps(SETTINGS.variables)]
+    invocation = dbt.cli(args, context=context)
+    yield from invocation.stream()
+    # The dashboard reads the latest test results from the lake.
+    results = invocation.target_path / "run_results.json"
+    if results.exists():
+        atomic_copy(results, lakehouse.lake.root / ".dbt" / "target" / "run_results.json")
 
 
 @asset(
@@ -225,11 +246,21 @@ def dashboard(lakehouse: LakehouseResource) -> MaterializeResult:  # type: ignor
 lakehouse_job = define_asset_job("lakehouse_pipeline", selection=AssetSelection.all())
 
 hourly = ScheduleDefinition(
-    job=lakehouse_job, cron_schedule="7 * * * *", default_status=DefaultScheduleStatus.STOPPED
+    job=lakehouse_job,
+    cron_schedule="7 * * * *",
+    default_status=(
+        DefaultScheduleStatus.RUNNING if _automation_status() else DefaultScheduleStatus.STOPPED
+    ),
 )
 
 
-@sensor(job=lakehouse_job, minimum_interval_seconds=60, default_status=DefaultSensorStatus.STOPPED)
+@sensor(
+    job=lakehouse_job,
+    minimum_interval_seconds=60,
+    default_status=(
+        DefaultSensorStatus.RUNNING if _automation_status() else DefaultSensorStatus.STOPPED
+    ),
+)
 def new_landing_files(context: SensorEvaluationContext) -> RunRequest | SkipReason:
     """Start a run when files newer than the last seen one land."""
     landing = Path(EnvVar("FLOWLAKE_LANDING").get_value("landing") or "landing")

@@ -301,7 +301,8 @@ def collect(lake: Lake) -> dict[str, Any]:
             connection,
             """
             select count(*) as batches, coalesce(sum(records_accepted), 0) as accepted,
-                coalesce(sum(records_quarantined), 0) as quarantined
+                coalesce(sum(records_quarantined), 0) as quarantined,
+                count(*) filter (where capture_was_cut_short) as cut_short
             from gold.dq_batches""",
         )[0]
         data["renames"] = _rows(
@@ -631,6 +632,7 @@ def _quality_section(
     facts = [
         ("Batches ingested", fmt_int(batches["batches"])),
         ("Captures rejected by FlowSentinel", fmt_int(rejected)),
+        ("Captures cut short at a limit", fmt_int(batches["cut_short"])),
         ("Records accepted", fmt_int(batches["accepted"])),
         ("Records quarantined", fmt_int(batches["quarantined"])),
         ("dbt tests (last build)", test_note or "not run"),

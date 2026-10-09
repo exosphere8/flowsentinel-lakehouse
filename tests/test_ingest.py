@@ -104,14 +104,15 @@ def test_pcaps_are_run_through_the_flowsentinel_cli(
     pcap = tmp_path / "capture.pcap"
     pcap.write_bytes(b"pretend pcap bytes")
     binary = fake_flowsentinel(tmp_path, fixtures_dir / "app-http.json")
-    result = ingest_pcap(lake, pcap, sensor_id="lab", binary=str(binary))
+    [result] = ingest_pcap(lake, pcap, sensor_id="lab", binary=str(binary))
     assert (result.status, result.source, result.records_written) == (
         "ingested",
         "flowsentinel_pcap",
         5,
     )
     # The capture is identified by the pcap's hash, so a second run is skipped without the CLI.
-    assert ingest_pcap(lake, pcap, sensor_id="lab", binary="/nonexistent").status == "skipped"
+    [again] = ingest_pcap(lake, pcap, sensor_id="lab", binary="/nonexistent")
+    assert again.status == "skipped"
 
 
 def test_a_pcap_rejected_by_flowsentinel_is_recorded(
@@ -120,7 +121,7 @@ def test_a_pcap_rejected_by_flowsentinel_is_recorded(
     pcap = tmp_path / "bad.pcap"
     pcap.write_bytes(b"garbage")
     binary = fake_flowsentinel(tmp_path, fixtures_dir / "invalid-magic.json", exit_code=4)
-    result = ingest_pcap(lake, pcap, sensor_id="lab", binary=str(binary))
+    [result] = ingest_pcap(lake, pcap, sensor_id="lab", binary=str(binary))
     assert result.status == "rejected" and "invalid_magic" in (result.error or "")
     assert lake.ledger_entry(result.batch_id) is not None
 
@@ -130,8 +131,9 @@ def test_a_missing_binary_fails_without_a_ledger_entry_so_it_is_retried(
 ) -> None:
     pcap = tmp_path / "x.pcap"
     pcap.write_bytes(b"x")
-    result = ingest_pcap(lake, pcap, sensor_id="lab", binary=str(tmp_path / "missing"))
+    [result] = ingest_pcap(lake, pcap, sensor_id="lab", binary=str(tmp_path / "missing"))
     assert result.status == "failed" and "could not run flowsentinel" in (result.error or "")
     assert lake.ledger_entry(result.batch_id) is None
     binary = fake_flowsentinel(tmp_path, fixtures_dir / "app-tls.json")
-    assert ingest_pcap(lake, pcap, sensor_id="lab", binary=str(binary)).status == "ingested"
+    [retried] = ingest_pcap(lake, pcap, sensor_id="lab", binary=str(binary))
+    assert retried.status == "ingested"
