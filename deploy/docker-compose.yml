@@ -1,0 +1,195 @@
+# FlowSentinel Suite: everything on one machine.
+#
+#   ./setup.sh                      once: creates .env, the admin password, inbox/ and config/
+#   docker compose up -d --build    first start builds the images (10-20 minutes)
+#
+# Then:
+#   FlowSentinel (sign in, upload and explore captures)  http://127.0.0.1:8080
+#   Lakehouse dashboard (alerts, traffic, data quality)  http://127.0.0.1:8088
+#   Pipeline (Dagster: runs, assets, tests)              http://127.0.0.1:3000
+#
+# Drop .pcap, .pcapng or FlowSentinel JSON files into inbox/sensor=<name>/; the pipeline picks
+# them up within a minute. Ports bind to 127.0.0.1 only: see docs/deployment.md before exposing
+# anything, because the Dagster UI has no sign-in of its own.
+#
+# Optional streaming path (Redpanda + a consumer writing into the lake):
+#   docker compose --profile streaming up -d --build
+
+name: flowsentinel-suite
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+x-lakehouse: &lakehouse
+  <<: *hardening
+  # One image for every lakehouse service; the build cache makes the repeats instant.
+  build:
+    context: ..
+  image: ${LAKEHOUSE_IMAGE:-flowsentinel-lakehouse:local}
+  restart: unless-stopped
+  init: true
+  environment:
+    FLOWLAKE_CONFIG: /config
+    FLOWLAKE_AUTOMATION: "on"
+    FLOWLAKE_FLOWSENTINEL_ARGS: ${FLOWLAKE_FLOWSENTINEL_ARGS:-}
+  volumes:
+    - lake:/data
+    - site:/data/site
+    - ${INBOX_DIR:-./inbox}:/data/inbox:ro
+    - ${CONFIG_DIR:-./config}:/config:ro
+  tmpfs:
+    - /tmp
+  pids_limit: 512
+
+services:
+  postgres:
+    <<: *hardening
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-flowsentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./setup.sh or set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-flowsentinel}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    # The entrypoint changes ownership of its directories once, as root.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # FlowSentinel's server and web dashboard, built from its repository at the commit the
+  # lakehouse is tested against. The first admin is created from secrets/flowsentinel_admin_password.
+  flowsentinel:
+    <<: *hardening
+    build:
+      context: ${FLOWSENTINEL_SOURCE:-https://github.com/exosphere8/flowsentinel.git#dfdb3cba20f031187bbc867124cd90af5f98a3db}
+    image: ${FLOWSENTINEL_IMAGE:-flowsentinel-api:suite}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FLOWSENTINEL_DATABASE_URL: postgres://${POSTGRES_USER:-flowsentinel}:${POSTGRES_PASSWORD:?run ./setup.sh or set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-flowsentinel}
+      FLOWSENTINEL_ADMIN_USERNAME: ${FLOWSENTINEL_ADMIN_USERNAME:-admin}
+      FLOWSENTINEL_ADMIN_PASSWORD_FILE: /run/secrets/flowsentinel_admin_password
+      FLOWSENTINEL_ALLOWED_HOSTS: ${FLOWSENTINEL_ALLOWED_HOSTS:-}
+      FLOWSENTINEL_SECURE_COOKIES: ${FLOWSENTINEL_SECURE_COOKIES:-false}
+      RUST_LOG: ${RUST_LOG:-info}
+    secrets:
+      - flowsentinel_admin_password
+    ports:
+      - "127.0.0.1:${FLOWSENTINEL_PORT:-8080}:8080"
+    volumes:
+      - uploads:/var/lib/flowsentinel/uploads
+    pids_limit: 256
+
+  # Dagster's web UI. Runs started here are queued and executed by lakehouse-daemon.
+  lakehouse-ui:
+    <<: *lakehouse
+    command: ["dagster-webserver", "--host", "0.0.0.0", "--port", "3000", "-m", "flowlake.orchestration"]
+    ports:
+      - "127.0.0.1:${DAGSTER_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/server_info', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  # The sensor (new files in inbox/), the hourly schedule and the run queue; runs execute here.
+  lakehouse-daemon:
+    <<: *lakehouse
+    depends_on:
+      lakehouse-ui:
+        condition: service_healthy
+    command: ["dagster-daemon", "run", "-m", "flowlake.orchestration"]
+    healthcheck:
+      test: ["CMD", "dagster-daemon", "liveness-check"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 120s
+
+  # The lakehouse dashboard: static files that every pipeline run rewrites.
+  dashboard:
+    <<: *hardening
+    image: nginxinc/nginx-unprivileged:1.29-alpine
+    restart: unless-stopped
+    # The lakehouse owns the shared volume and writes the first page, so it starts first and
+    # nginx's own welcome page is never copied in.
+    depends_on:
+      lakehouse-ui:
+        condition: service_healthy
+    volumes:
+      - type: volume
+        source: site
+        target: /usr/share/nginx/html
+        read_only: true
+        volume:
+          nocopy: true
+    tmpfs:
+      - /tmp
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-8088}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ---- optional: the streaming path ---------------------------------------------------------
+  redpanda:
+    profiles: ["streaming"]
+    image: redpandadata/redpanda:v26.2.3
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "127.0.0.1:${KAFKA_PORT:-19092}:19092"
+    volumes:
+      - redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Consumes the flow topic into the lake; the hourly schedule turns it into dashboards.
+  lakehouse-stream:
+    <<: *lakehouse
+    profiles: ["streaming"]
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      lakehouse-ui:
+        condition: service_healthy
+    environment:
+      FLOWLAKE_CONFIG: /config
+      FLOWLAKE_KAFKA_BOOTSTRAP: redpanda:9092
+    command: ["flowlake", "stream", "consume"]
+
+secrets:
+  flowsentinel_admin_password:
+    file: ./secrets/flowsentinel_admin_password
+
+volumes:
+  postgres:
+  uploads:
+  lake:
+  site:
+  redpanda:

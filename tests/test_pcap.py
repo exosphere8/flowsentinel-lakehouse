@@ -127,6 +127,14 @@ def test_pcapng_converts_to_identical_packets(
     assert records == [(s, f * scale, o, d) for s, f, o, d in original]
 
 
+def test_the_committed_pcapng_fixture_matches_its_pcap(tmp_path: Path) -> None:
+    # flows-mixed.pcapng (nanosecond timestamps) is what the suite smoke test drops in the inbox.
+    prepared = prepare_capture(PCAPS / "flows-mixed.pcapng", tmp_path)
+    _, records = read_pcap(prepared.parts[0])
+    _, original = read_pcap(FLOWS_MIXED)
+    assert records == [(s, f * 1_000, o, d) for s, f, o, d in original]
+
+
 def test_pcapng_interfaces_become_separate_split_captures(tmp_path: Path) -> None:
     pcapng = tmp_path / "two.pcapng"
     write_pcapng(FLOWS_MIXED, pcapng, interfaces=2)

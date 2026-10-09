@@ -1,0 +1,4 @@
+rule_id,src_ip,dst_ip,dst_port,reason
+beaconing,*,*,123,NTP time synchronization is periodic by design.
+beaconing,10.0.10.5,*,443,Monitoring agent reports in every 60 seconds.
+exfiltration,10.0.10.20,198.51.100.25,*,Nightly offsite backup.

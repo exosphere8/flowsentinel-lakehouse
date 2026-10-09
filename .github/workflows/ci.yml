@@ -111,3 +111,12 @@ jobs:
         with:
           name: dashboard
           path: site/
+
+  suite:
+    name: Self-hosted suite end to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build both images, start the suite, ingest captures, check the dashboard
+        run: deploy/smoke-test.sh

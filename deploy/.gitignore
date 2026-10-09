@@ -1,0 +1,6 @@
+# Created by setup.sh or at run time; never commit.
+.env
+secrets/
+inbox/
+config/
+backups/

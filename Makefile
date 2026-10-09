@@ -6,7 +6,7 @@ export FLOWLAKE_LAKE := $(abspath $(LAKE))
 export FLOWLAKE_LANDING := $(abspath $(LANDING))
 export FLOWLAKE_SITE := $(abspath $(SITE))
 
-.PHONY: install demo ingest transform report dagster up down stream-demo lint test test-all check clean
+.PHONY: install demo ingest transform report dagster up down stream-demo suite suite-test lint test test-all check clean
 
 install:            ## Install the package with every extra and the dev tools
 	uv sync --all-extras
@@ -36,6 +36,12 @@ stream-demo: up     ## Publish one synthetic day to Redpanda and consume it into
 	uv run flowlake stream produce --days 1
 	uv run flowlake --lake $(LAKE) stream consume --idle-timeout 10
 	uv run flowlake --lake $(LAKE) transform
+
+suite:              ## Set up and start the self-hosted suite (docs/deployment.md)
+	cd deploy && ./setup.sh && docker compose up -d --build --wait
+
+suite-test:         ## Build and start a throwaway suite, ingest captures, check the dashboard
+	deploy/smoke-test.sh
 
 lint:               ## Format check, lint, types, contract schemas
 	uv run ruff format --check src tests scripts

@@ -13,6 +13,7 @@ stopped, unless FLOWLAKE_AUTOMATION is on (the self-hosted suite turns it on).
 """
 
 # No `from __future__ import annotations` here: Dagster inspects the runtime type hints.
+import hashlib
 import json
 import os
 import shutil
@@ -31,7 +32,10 @@ from dagster import (
     AssetKey,
     AssetSelection,
     AssetSpec,
+    Config,
     ConfigurableResource,
+    DagsterInstance,
+    DagsterRunStatus,
     DefaultScheduleStatus,
     DefaultSensorStatus,
     Definitions,
@@ -39,6 +43,7 @@ from dagster import (
     MaterializeResult,
     MetadataValue,
     RunRequest,
+    RunsFilter,
     ScheduleDefinition,
     SensorEvaluationContext,
     SkipReason,
@@ -49,6 +54,7 @@ from dagster import (
     sensor,
 )
 from dagster_dbt import DbtCliResource, DbtProject, dbt_assets, get_asset_key_for_model
+from pydantic import Field
 
 from flowlake.bronze import Lake, atomic_copy
 from flowlake.ingest import discover, ingest_path
@@ -206,13 +212,28 @@ def quarantine_rate_is_low(lakehouse: LakehouseResource) -> AssetCheckResult:
     )
 
 
+class DbtBuildConfig(Config):
+    """Options for a dbt build, set in the Dagster launchpad."""
+
+    full_refresh: bool = Field(
+        default=False,
+        description="Rebuild the incremental models from bronze, for example after the network "
+        "zones change.",
+    )
+
+
 @dbt_assets(manifest=dbt_project.manifest_path, project=dbt_project)
 def dbt_models(
-    context: AssetExecutionContext, dbt: DbtCliResource, lakehouse: LakehouseResource
+    context: AssetExecutionContext,
+    dbt: DbtCliResource,
+    lakehouse: LakehouseResource,
+    config: DbtBuildConfig,
 ) -> Iterator[Any]:
     """Every dbt model and seed is an asset; every dbt test is an asset check."""
     lakehouse.export_lake_path()
     args = ["build"]
+    if config.full_refresh:
+        args.append("--full-refresh")
     if SETTINGS.variables:
         args += ["--vars", json.dumps(SETTINGS.variables)]
     invocation = dbt.cli(args, context=context)
@@ -262,14 +283,53 @@ hourly = ScheduleDefinition(
     ),
 )
 def new_landing_files(context: SensorEvaluationContext) -> RunRequest | SkipReason:
-    """Start a run when files newer than the last seen one land."""
+    """Start a run when the landing files change: a new, replaced or rewritten file.
+
+    The cursor fingerprints every file's path, size and modification time, so a copy that keeps
+    an old timestamp (``rsync -a``, ``cp -p``) is noticed as well as a fresh one.
+    """
     landing = Path(EnvVar("FLOWLAKE_LANDING").get_value("landing") or "landing")
     files = discover(landing) if landing.exists() else []
-    newest = max((f.stat().st_mtime for f in files), default=0.0)
-    if newest <= float(context.cursor or 0):
+    if not files:
+        return SkipReason("the landing directory has no files")
+    digest = hashlib.sha256()
+    for path in files:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:  # removed since it was listed
+            continue
+        entry = f"{path.relative_to(landing)}\0{stat.st_size}\0{stat.st_mtime_ns}\n"
+        digest.update(entry.encode())
+    fingerprint = digest.hexdigest()
+    if fingerprint == context.cursor:
         return SkipReason("no new files in the landing directory")
-    context.update_cursor(str(newest))
-    return RunRequest(run_key=f"landing-{newest}")
+    context.update_cursor(fingerprint)
+    return RunRequest(run_key=f"landing-{fingerprint[:16]}")
+
+
+def fail_interrupted_runs(instance: DagsterInstance | None = None) -> list[str]:
+    """Mark the runs a stopped daemon left in progress as failed, and return their IDs.
+
+    In the suite, runs execute in subprocesses of the daemon, so when it starts none can still
+    be running. Without this, a run interrupted by a restart stays "started" forever and holds
+    the run queue's only slot. Nothing is lost: ingestion is idempotent, and the next run, at the
+    latest the hourly one, picks up the files.
+    """
+    instance = instance or DagsterInstance.get()
+    interrupted = instance.get_runs(
+        filters=RunsFilter(
+            statuses=[
+                DagsterRunStatus.STARTING,
+                DagsterRunStatus.STARTED,
+                DagsterRunStatus.CANCELING,
+            ]
+        )
+    )
+    for run in interrupted:
+        instance.report_run_failed(
+            run, "The pipeline daemon stopped while this run was in progress."
+        )
+    return [run.run_id for run in interrupted]
 
 
 defs = Definitions(

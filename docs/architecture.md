@@ -177,6 +177,50 @@ Security data lakes increasingly standardize on the Open Cybersecurity Schema Fr
 activity 6 "Traffic") with endpoints, connection info (protocol, direction) and traffic counters,
 ready to `COPY` to JSON or Parquet for another tool.
 
+### 13. Configuration as validated seeds, one dbt project per configuration
+
+A deployment's zones, allowlist and thresholds live outside the code, in up to three files.
+They are validated in Python before dbt runs, with the file, line and reason in the error,
+because a typo in a CIDR would otherwise quietly turn internal traffic into "outbound". The
+files become dbt seeds and vars in a copy of the packaged project under
+`<lake>/.dbt/projects/<hash>/`, where the hash covers every file. Two configurations never share
+a directory, a configuration that did not change reuses its parsed manifest, and the directory
+is created under a temporary name and renamed, so concurrent processes cannot see half of it.
+The dbt unit tests pin their own thresholds, so tuning a deployment cannot break them.
+
+### 14. Real captures are normalized before FlowSentinel sees them
+
+FlowSentinel's CLI reads classic pcap and stops at a million packets per run. Rather than
+asking every user to run `editcap` first, the lakehouse converts pcapng in pure Python (both
+byte orders, any timestamp resolution and offset, one output per interface) and splits large
+captures into parts that are ingested as one source with one ledger entry. Converting in Python
+keeps the container free of Wireshark's tools, and streaming block by block keeps memory flat
+for captures of any size. Scratch files go to the data volume, not to memory.
+
+### 15. The self-hosted suite
+
+The suite is plain Docker Compose because the people who need it run one machine, not a
+cluster. The decisions that matter:
+
+* **One image, three roles.** The Dagster UI, the daemon and the stream consumer are the same
+  image with different commands, so they can never disagree about the code or the dbt project.
+* **Runs execute in the daemon, one at a time.** DuckDB allows one writer, so the run queue has
+  a single slot. That makes an interrupted run dangerous: left "started", it would hold the
+  slot forever. Because every run is a child of the daemon, a starting daemon knows that none
+  can still be alive, and marks them failed.
+* **The inbox is read-only.** The pipeline never moves or deletes your captures; the ledger
+  remembers what was ingested. The sensor fingerprints names, sizes and times instead of
+  watching for newer timestamps, because `rsync -a` keeps the sender's.
+* **A failure stays local.** A file that cannot be read fails alone and is retried on the next
+  run; a capture FlowSentinel rejects is recorded as rejected, with the reason. Either way the
+  rest of the inbox is still ingested.
+* **Secure by default.** Secrets are generated on the machine, every port binds to loopback,
+  and the containers run unprivileged with read-only file systems and no capabilities. The
+  Dagster UI has no sign-in, so the documentation says how to reach it safely rather than
+  pretending it has one.
+* **Tested as a whole.** CI builds both images, starts the stack, drops captures into the inbox
+  and waits for the alerts on the dashboard, the same path a user takes.
+
 ## What would change at 100x scale
 
 * **Table format.** Bronze and gold would move to Apache Iceberg (or Delta) on object storage for
@@ -200,5 +244,9 @@ ready to `COPY` to JSON or Parquet for another tool.
 * Network zones are IPv4 ranges from a seed; IPv6 is classified as internal only for unique
   local (`fc00::/7`) and link-local (`fe80::/10`) addresses.
 * Timestamps are stored with microsecond precision; FlowSentinel reports nanoseconds.
+* The suite has no retention policy: bronze grows until old partitions are deleted by hand
+  (see [deployment.md](deployment.md#retention)).
+* Changing network zones reclassifies existing flows only after a full refresh, because
+  `fct_flows` is incremental.
 * The synthetic generator emits the subset of FlowSentinel's capture block that the lakehouse
   reads, and complete flow records.

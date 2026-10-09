@@ -3,6 +3,7 @@ from __future__ import annotations
 import stat
 import sys
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pytest
@@ -137,3 +138,38 @@ def test_a_missing_binary_fails_without_a_ledger_entry_so_it_is_retried(
     binary = fake_flowsentinel(tmp_path, fixtures_dir / "app-tls.json")
     [retried] = ingest_pcap(lake, pcap, sensor_id="lab", binary=str(binary))
     assert retried.status == "ingested"
+
+
+def test_an_unreadable_file_fails_alone_and_is_retried(
+    lake: Lake, tmp_path: Path, fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    landing = tmp_path / "landing" / "sensor=lab"
+    landing.mkdir(parents=True)
+    for name in ("app-tls.json", "detect-mixed.json"):
+        (landing / name).write_bytes((fixtures_dir / name).read_bytes())
+    (landing / "capture.pcap").write_bytes(b"x")
+    locked = {landing / "detect-mixed.json", landing / "capture.pcap"}
+    real_read_bytes, real_open = Path.read_bytes, Path.open
+
+    def read_bytes(self: Path) -> bytes:
+        if self in locked:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_bytes(self)
+
+    def open_(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self in locked:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    monkeypatch.setattr(Path, "open", open_)
+    results = {Path(r.input_ref).name: r for r in ingest_path(lake, landing.parent)}
+    assert results["app-tls.json"].status == "ingested"
+    for name in ("detect-mixed.json", "capture.pcap"):
+        assert results[name].status == "failed"
+        assert results[name].error == "cannot read the file: Permission denied"
+    monkeypatch.setattr(Path, "read_bytes", real_read_bytes)
+    monkeypatch.setattr(Path, "open", real_open)
+    locked.clear()
+    retried = {Path(r.input_ref).name: r.status for r in ingest_path(lake, landing.parent)}
+    assert retried["detect-mixed.json"] == "ingested"

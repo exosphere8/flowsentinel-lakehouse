@@ -1,0 +1,6 @@
+# Detection thresholds. Only the settings you list change; every name is checked.
+# All settings and their defaults: transform/dbt_project.yml (vars).
+port_scan_min_distinct_ports: 50
+beaconing_max_cv: 0.2
+exfiltration_min_bytes_out: 1000000000   # 1 GB a day to one host
+dns_tunneling_min_distinct_names: 50

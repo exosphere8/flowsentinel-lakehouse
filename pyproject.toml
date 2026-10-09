@@ -1,6 +1,6 @@
 [project]
 name = "flowsentinel-lakehouse"
-version = "0.1.0"
+version = "0.2.0"
 description = "A security data lakehouse for FlowSentinel network flow telemetry: contracts, streaming ingestion, dbt medallion models, SQL detections and orchestration."
 readme = "README.md"
 license = "MIT"
@@ -45,6 +45,20 @@ dev = [
 [build-system]
 requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
+
+# An explicit list, so local files such as deploy/.env or deploy/secrets/ can never be packaged.
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src",
+    "transform",
+    "tests",
+    "contracts",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "LICENSE",
+    "uv.lock",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/flowlake"]

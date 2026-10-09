@@ -12,6 +12,13 @@ dist/
 build/
 *.egg-info/
 
+# The self-hosted suite's secrets and data (deploy/.gitignore too, for copies of deploy/)
+/deploy/.env
+/deploy/secrets/
+/deploy/inbox/
+/deploy/config/
+/deploy/backups/
+
 # Pipeline data and outputs
 /lake/
 /landing/

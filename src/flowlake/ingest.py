@@ -103,7 +103,10 @@ def ingest_pcap(
     a ledger entry too once every part is done, so a re-run skips it without reading it again.
     """
     validate_sensor_id(sensor_id)
-    content_sha256 = sha256_file(pcap)
+    try:
+        content_sha256 = sha256_file(pcap)
+    except OSError as exc:
+        return [_unreadable(pcap, "flowsentinel_pcap", exc)]
     batch_id = file_batch_id(sensor_id, content_sha256)
     # Check the ledger before running the CLI: a finished capture is not decoded twice.
     if not force and (skipped := _skip_if_done(lake, batch_id, "flowsentinel_pcap", str(pcap))):
@@ -111,7 +114,9 @@ def ingest_pcap(
     with tempfile.TemporaryDirectory(prefix="flowlake-capture-") as scratch:
         try:
             prepared = prepare_capture(pcap, Path(scratch), max_packets=max_packets)
-        except (CaptureFormatError, OSError) as exc:
+        except OSError as exc:  # unreadable now or no space to convert: try again next run
+            return [_unreadable(pcap, "flowsentinel_pcap", exc)]
+        except CaptureFormatError as exc:
             reason = f"cannot read the capture: {exc}"
             return [
                 _reject(
@@ -235,16 +240,35 @@ def _ingest_file(
 ) -> list[BatchResult]:
     if file.suffix.lower() in _CAPTURE_SUFFIXES:
         return ingest_pcap(lake, file, sensor_id=sensor_id, binary=binary, force=force)
+    try:
+        data = file.read_bytes()
+    except OSError as exc:
+        return [_unreadable(file, "flowsentinel_json", exc)]
     return [
         ingest_document(
             lake,
-            file.read_bytes(),
+            data,
             sensor_id=sensor_id,
             source="flowsentinel_json",
             input_ref=str(file),
             force=force,
         )
     ]
+
+
+def _unreadable(path: Path, source: str, exc: OSError) -> BatchResult:
+    """A file that cannot be read right now, for example because of its permissions.
+
+    It fails alone, without a ledger entry, so the other files are ingested and the next run
+    tries it again.
+    """
+    return BatchResult(
+        batch_id=f"unread-{sha256_hex(str(path).encode())[:32]}",
+        status="failed",
+        source=source,
+        input_ref=str(path),
+        error=f"cannot read the file: {exc.strerror or exc}",
+    )
 
 
 def discover(path: Path) -> list[Path]:

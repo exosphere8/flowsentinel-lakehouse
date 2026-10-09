@@ -1,0 +1,20 @@
+# Build behind a TLS-inspecting proxy: give the builds its CA certificate.
+#
+#   EXTRA_CA_FILE=/path/to/proxy-ca.crt docker compose \
+#     -f docker-compose.yml -f compose.build-behind-proxy.yml build
+#
+# Set HTTP_PROXY/HTTPS_PROXY in the environment as usual; Docker passes them to builds.
+services:
+  lakehouse-ui:
+    build:
+      secrets: [extra_ca]
+  lakehouse-daemon:
+    build:
+      secrets: [extra_ca]
+  lakehouse-stream:
+    build:
+      secrets: [extra_ca]
+
+secrets:
+  extra_ca:
+    file: ${EXTRA_CA_FILE:?set EXTRA_CA_FILE to your proxy's CA certificate}

@@ -1,0 +1,8 @@
+zone,cidr,is_internal,description
+servers,10.0.10.0/24,true,Data center servers
+workstations,10.0.20.0/22,true,Office workstations
+guest_wifi,192.168.50.0/24,false,Guest Wi-Fi: treat like the internet
+public_web,203.0.113.0/28,true,Our own public web servers
+private,10.0.0.0/8,true,Other RFC 1918 space
+private,172.16.0.0/12,true,RFC 1918
+private,192.168.0.0/16,true,RFC 1918

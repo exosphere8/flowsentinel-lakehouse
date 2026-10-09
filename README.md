@@ -11,7 +11,10 @@ data contract and a quarantine into Parquet, by batch or by streaming through Ka
 dbt models on DuckDB turn them into tested facts, dimensions and SQL threat detections mapped
 to MITRE ATT&CK, and Dagster orchestrates it all.
 
-The sensor decodes packets into flows; this project is the data platform behind it.
+The sensor decodes packets into flows; this project is the data platform behind it. It also
+ships as the **FlowSentinel Suite**, a self-hosted stack you can run on your own network with
+two commands: FlowSentinel's server and web app, PostgreSQL, the pipeline, Dagster and the
+dashboard. Drop capture files into a folder and the alerts are on the dashboard minutes later.
 
 ![The dashboard built by the pipeline](docs/images/dashboard.png)
 
@@ -25,10 +28,12 @@ The sensor decodes packets into flows; this project is the data platform behind 
 | Batch and streaming | Files and a **Redpanda** topic feed the same bronze layer through the same writer. The consumer commits offsets only after its batch is durable. |
 | Late-arriving data | Bronze is partitioned by **ingestion date**. Incremental dbt models use a **watermark with a lookback**, and the hourly aggregate **recomputes only the hours that changed**. A test proves incremental runs equal a full refresh. |
 | History | A **type 2 slowly changing dimension** of hostnames per IP, derived from event time with a gaps-and-islands query. |
-| Analytics engineering | A **medallion** model in **dbt + DuckDB**: 14 models, 5 seeds, 48 data tests, 4 dbt unit tests, a reconciliation test and source freshness. |
+| Analytics engineering | A **medallion** model in **dbt + DuckDB**: 14 models, 5 seeds, 49 data tests, 4 dbt unit tests, a reconciliation test and source freshness. |
 | Security analytics | Four **SQL detections** (port scan, C2 beaconing, DNS tunneling, exfiltration) with evidence and **MITRE ATT&CK** mapping, scored for **precision and recall** against labeled ground truth in CI. Flows are also exported as **OCSF** events. |
 | Orchestration | **Dagster** software-defined assets: dbt models as assets, dbt tests as asset checks, a landing-directory sensor and an hourly schedule. |
-| Engineering hygiene | 70 pytest tests (end to end, Kafka, Dagster, upstream contract), `mypy --strict`, ruff, a lockfile, CI on Python 3.11 and 3.13, mutation-checked incremental tests. |
+| Real-world input | **pcapng** converted in pure Python, captures over a million packets **split** into parts, captures cut short at a limit flagged, unreadable files retried without holding up the rest. |
+| Operations | A **self-hosted suite** in Docker Compose with hardened containers, generated secrets, validated per-site **configuration** (zones, allowlist, thresholds), a documented backup and restore, and an end-to-end smoke test in CI. |
+| Engineering hygiene | 109 pytest tests (end to end, Kafka, Dagster, upstream contract), `mypy --strict`, ruff, a lockfile, CI on Python 3.11 and 3.13, mutation-checked incremental tests. |
 
 ## Architecture
 
@@ -49,7 +54,30 @@ flowchart LR
 
 The design decisions and their trade-offs are in [docs/architecture.md](docs/architecture.md).
 
-## Quick start
+## Run it on your network
+
+The suite needs Docker and nothing else:
+
+```bash
+git clone https://github.com/exosphere8/flowsentinel-lakehouse.git
+cd flowsentinel-lakehouse/deploy
+./setup.sh                    # generates the passwords, creates inbox/ and config/
+docker compose up -d --build  # the first build takes 10 to 20 minutes
+```
+
+| Open | For |
+| --- | --- |
+| <http://127.0.0.1:8080> | FlowSentinel: sign in as `admin` with the password `setup.sh` printed |
+| <http://127.0.0.1:8088> | The lakehouse dashboard: alerts, traffic, data quality |
+| <http://127.0.0.1:3000> | Dagster: runs, assets, data tests, logs |
+
+Put `.pcap`, `.pcapng` or FlowSentinel JSON files into `deploy/inbox/sensor=<name>/`, and tell
+the lakehouse about your subnets in `deploy/config/`. Everything about running it for real
+(sizing, copying files in, backups, upgrades, security, troubleshooting) is in
+[docs/deployment.md](docs/deployment.md); the configuration is in
+[docs/configuration.md](docs/configuration.md).
+
+## Quick start (development)
 
 Requirements: [uv](https://docs.astral.sh/uv/) (it fetches a suitable Python), and Docker
 only for the streaming path.
@@ -107,7 +135,10 @@ uv run flowlake report
 ```
 
 `flowlake ingest` also accepts the JSON that `flowsentinel flows --json` prints, so captures can
-be decoded on the sensor and shipped as JSON.
+be decoded on the sensor and shipped as JSON. pcapng files are converted first, and captures
+over a million packets are split into parts. Add `--config DIR` (or set `FLOWLAKE_CONFIG`) to
+use your own network zones, allowlist and thresholds; `uv run flowlake --config DIR config`
+checks them.
 
 ## The data model
 
@@ -140,17 +171,19 @@ variation) so an analyst can verify it.
 | Upstream | Builds FlowSentinel at a pinned commit, checks every flow from its fixtures and the exact field set | CI job `upstream-contract` |
 | Ingestion | Idempotency, `--force`, parallel equals serial, rejected vs failed inputs, pcaps through the CLI | `tests/test_ingest.py`, `tests/test_bronze.py` |
 | Streaming | Against a real Redpanda: streamed and file-ingested data are identical, offsets committed, a full replay leaves gold unique | `tests/test_streaming.py`, CI job `streaming` |
-| dbt | 48 data tests, 4 unit tests on the detection and CIDR logic, reconciliation and SCD2 invariants | `transform/`, run by `dbt build` |
+| dbt | 49 data tests, 4 unit tests on the detection and CIDR logic, reconciliation and SCD2 invariants | `transform/`, run by `dbt build` |
 | End to end | Precision and recall of 1.0 on ground truth, incremental equals full refresh with late data, replays, empty lake, OCSF shape | `tests/test_pipeline.py` |
-| Orchestration | The Dagster job materializes every asset in-process; the sensor fires once per new file | `tests/test_orchestration.py` |
+| Orchestration | The Dagster job materializes every asset in-process, also as a full refresh; the sensor notices new and re-timestamped files; interrupted runs are failed | `tests/test_orchestration.py` |
+| Captures and configuration | pcapng conversion (byte orders, resolutions, interfaces, corrupt blocks), splitting, configuration errors, configuration changing the results | `tests/test_pcap.py`, `tests/test_project.py` |
+| The suite | Builds both images, starts the five services, signs in to FlowSentinel, drops a pcap, a pcapng and a day of traffic into the inbox, and waits for the four alerts on the dashboard | `deploy/smoke-test.sh`, CI job `suite` |
 
 `make check` runs the linters and the tests that need no broker; `make test-all` adds Redpanda.
 
 ## Benchmarks
 
-Measured with [`scripts/benchmark.py`](scripts/benchmark.py) on a 4-vCPU Linux container with
-Python 3.12: seven days of synthetic traffic from 600 workstations, 336 hourly captures and
-**1,065,654 flows**.
+Measured with [`scripts/benchmark.py`](scripts/benchmark.py) on version 0.1.0, on a 4-vCPU
+Linux container with Python 3.12: seven days of synthetic traffic from 600 workstations, 336
+hourly captures and **1,065,654 flows**.
 
 | Step | Time |
 | --- | ---: |
@@ -178,7 +211,8 @@ src/flowlake/
   bronze.py          Parquet layout, atomic batch writer, quarantine, ledger
   ingest.py          file and pcap ingestion, parallel across files
   streaming.py       Kafka producer and micro-batching consumer
-  sources/           FlowSentinel adapter and the synthetic traffic generator
+  sources/           FlowSentinel adapter, pcapng conversion and splitting, synthetic traffic
+  project.py         deployment configuration: validation and the dbt project it runs
   transform.py       runs dbt for a lake
   evaluate.py        scores detections against ground truth
   report.py          the static dashboard
@@ -188,7 +222,9 @@ transform/           the dbt project (models, seeds, macros, tests)
 contracts/           generated JSON Schemas
 scripts/benchmark.py the benchmark below
 tests/               pytest suite, with real FlowSentinel output as fixtures
-docs/architecture.md design decisions and trade-offs
+deploy/              the self-hosted suite: Compose file, setup, example configuration, smoke test
+Dockerfile           the lakehouse image, with the FlowSentinel CLI built in
+docs/                architecture, deployment and configuration guides
 ```
 
 ## Data and safety
@@ -197,6 +233,28 @@ The synthetic data uses private (RFC 1918) and documentation (RFC 5737) addresse
 domain names (RFC 2606), so it never points at a real host. FlowSentinel itself keeps only
 metadata, never payloads; see its [README](https://github.com/exosphere8/flowsentinel#readme).
 Only analyze traffic you own or are authorized to inspect.
+
+## Support and services
+
+The software is free and open source under the MIT license, and it stays that way: every
+feature is in this repository. For teams that want help running it, I offer paid services:
+
+* **Deployment** on your infrastructure, sized for your traffic, with the hardening from
+  [docs/deployment.md](docs/deployment.md) done for you.
+* **Tuning**: network zones, allowlists and thresholds fitted to your traffic, so the alerts
+  that remain are worth reading.
+* **Custom work**: new detections, other sensors or log sources feeding the lakehouse, and
+  exports to your SIEM.
+* **Training** for the analysts and engineers who will run it.
+
+To ask about any of it, open an issue titled "Services:" with a line about what you need, and
+I will get back to you there. Bug reports and questions are welcome as issues too, free of
+charge. For security problems, follow [SECURITY.md](SECURITY.md) instead.
+
+## Project notes
+
+* [CHANGELOG.md](CHANGELOG.md): what changed in each release.
+* [POSTMORTEM.md](POSTMORTEM.md): what went wrong while building this, and what I learned.
 
 ## License
 
